@@ -1,0 +1,35 @@
+#Windows Thumbnails ignorieren
+Thumbs.db
+
+#Visual Studio Dateien ignorieren
+*.obj
+*.exe
+*.dll
+*.pdb
+*.user
+*.aps
+*.pch
+*.vspscc
+*_i.c
+*_p.c
+*.ncb
+*.suo
+*.tlb
+*.tlh
+*.bak
+*.cache
+*.ilk
+*.log
+[Bb]in
+[Dd]ebug*/
+[Rr]elease*/
+*.lib
+obj/
+[Rr]elease*/
+_ReSharper*/
+MemoryModule.net/Safe (1st Try)/IntPtrExtensions.cs
+ipch/sampledll-62cec890/sampledll-fd736eea.ipch
+MemoryModule.net.opensdf
+MemoryModule.net.sdf
+MemoryModule.net/Safe (1st Try)/NativeFunctions.cs
+MemoryModule.net/Safe (1st Try)/SafeTry.cs
