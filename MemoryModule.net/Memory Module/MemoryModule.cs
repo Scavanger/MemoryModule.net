@@ -34,7 +34,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.ComponentModel;
 
-namespace MemoryModule.net
+namespace Scavanger.MemoryModule
 {
     unsafe class MemoryModule : IDisposable
     {
@@ -106,7 +106,7 @@ namespace MemoryModule.net
 
             exports = (IMAGE_EXPORT_DIRECTORY*)(this.codeBase + directory->VirtualAddress);
             if (exports->NumberOfFunctions == 0 || exports->NumberOfNames == 0)
-                throw new NativeDllLoadException("Dll exports no functions");
+                throw new NativeDllLoadException("Dll exports no functions.");
 
             nameRef = (uint*)(this.codeBase + exports->AddressOfNames);
             ordinal = (ushort*)(this.codeBase + exports->AddressOfNameOrdinals);

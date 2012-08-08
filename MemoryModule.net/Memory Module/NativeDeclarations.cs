@@ -33,7 +33,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace MemoryModule.net
+namespace Scavanger.MemoryModule
 {
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct IMAGE_DOS_HEADER32

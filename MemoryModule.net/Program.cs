@@ -1,63 +1,71 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Runtime.InteropServices;
 using System.IO;
 
-namespace MemoryModule.net
+namespace Scavanger.MemoryModule
 {
     class Program
     {
         [StructLayout(LayoutKind.Sequential)]
-        struct Test
+        struct Foo
         {
-            public int a;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
-            public int[] b;
+            public int[] bar;
         }
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate int StructTestDelegate(IntPtr strPtr);
+        private delegate int QuxDelegate(IntPtr strPtr);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate int AddNumbersDelegate(int a, int b);
 
         static void Main(string[] args)
         {
-            //byte[] dll = Properties.Resources.SampleDLL;
-            byte[] dll = File.ReadAllBytes(@"..\..\..\Debug\SampleDLL.dll");
-            try
+
+#if DEBUG
+            string dllPath = @"..\..\..\Debug\SampleDll.dll";
+#else
+            string dllPath = @"..\..\..\Release\SampleDll.dll";
+#endif
+
+            if (File.Exists(dllPath))
             {
-                using (MemoryModule memModule = new MemoryModule(dll))
+                try
                 {
-                    AddNumbersDelegate AddNumbers = (AddNumbersDelegate)memModule.GetDelegateFromFuncName("AddNumbers", typeof(AddNumbersDelegate));
-                    if (AddNumbers != null)
-                        Console.WriteLine(AddNumbers(40, 2));
+                    using (MemoryModule memModule = new MemoryModule(File.ReadAllBytes(dllPath)))
+                    {
+                        AddNumbersDelegate AddNumbers = (AddNumbersDelegate)memModule.GetDelegateFromFuncName("AddNumbers", typeof(AddNumbersDelegate));
+                        if (AddNumbers != null)
+                            Console.WriteLine("The Answer: {0:G}", AddNumbers(40, 2));
 
-                    StructTestDelegate StructTest = (StructTestDelegate)memModule.GetDelegateFromFuncName("StructTest", typeof(StructTestDelegate));
+                        QuxDelegate qux = (QuxDelegate)memModule.GetDelegateFromFuncName("Qux", typeof(QuxDelegate));
 
-                    Test test = new Test();
-                    test.a = 2;
-                    test.b = new int[] {3, 4, 5};
+                        Foo foo = new Foo();
+                        foo.bar = new int[] { 23, 5, 42 };
 
-                    IntPtr testPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Test)));
-                    Marshal.StructureToPtr(test, testPtr, true);
+                        IntPtr fooPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Foo)));
+                        Marshal.StructureToPtr(foo, fooPtr, true);
 
-                    int j = 0;
+                        if (qux != null)
+                            Console.WriteLine("Still the answer: {0:D}", qux(fooPtr));
 
-                    if (StructTest != null)
-                        j = StructTest(testPtr);
-
-
+                        Marshal.FreeHGlobal(fooPtr);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error: " + ex.Message);
                 }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Error: " + ex.Message);
-            }
+            else
+                Console.WriteLine("Error: Dll not found!");
 
             Console.ReadKey(true);
+        }
+
+        static void LoadAndExecuteFromMemory(byte[] dll)
+        {
+
         }
     }
 }

@@ -23,12 +23,12 @@ Thumbs.db
 [Bb]in
 [Dd]ebug*/
 [Rr]elease*/
+ipch*/
 *.lib
 obj/
 [Rr]elease*/
 _ReSharper*/
 MemoryModule.net/Safe (1st Try)/IntPtrExtensions.cs
-ipch/sampledll-62cec890/sampledll-fd736eea.ipch
 MemoryModule.net.opensdf
 MemoryModule.net.sdf
 MemoryModule.net/Safe (1st Try)/NativeFunctions.cs

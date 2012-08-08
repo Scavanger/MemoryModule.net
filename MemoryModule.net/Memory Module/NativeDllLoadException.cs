@@ -31,7 +31,7 @@
 
 using System;
 
-namespace MemoryModule.net
+namespace Scavanger.MemoryModule
 {
     public class NativeDllLoadException : Exception
     {

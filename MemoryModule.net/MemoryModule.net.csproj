@@ -8,7 +8,7 @@
     <ProjectGuid>{9A7A2A19-456F-41B4-964D-2416ABB0368A}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>MemoryModule.net</RootNamespace>
+    <RootNamespace>Scavanger.MemoryModule</RootNamespace>
     <AssemblyName>MemoryModule.net</AssemblyName>
     <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
@@ -61,10 +61,10 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\SampleDLL.dll" />
+    <Content Include="License.txt" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="License.txt" />
+    <Folder Include="Resources\" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

@@ -3,11 +3,10 @@
 
 #define EXPORT __declspec(dllexport)
 
-typedef struct test
+typedef struct foo
 {
-	int a;
-	int b[2];
-} Test, *PTest;
+	int bar[3];
+} Foo, *PFoo;
 
 #ifdef __cplusplus
 extern "C"
@@ -15,7 +14,7 @@ extern "C"
 #endif
 
 EXPORT int AddNumbers(int a, int b);
-EXPORT int StructTest(PTest str);
+EXPORT int Qux(PFoo foo);
 
 #ifdef __cplusplus
 }
