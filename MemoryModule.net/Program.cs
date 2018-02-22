@@ -13,10 +13,10 @@ namespace Scavanger.MemoryModule
             public int[] bar;
         }
 
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate int QuxDelegate(IntPtr strPtr);
 
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate int AddNumbersDelegate(int a, int b);
 
         static void Main(string[] args)
@@ -40,8 +40,10 @@ namespace Scavanger.MemoryModule
 
                         QuxDelegate qux = (QuxDelegate)memModule.GetDelegateFromFuncName("Qux", typeof(QuxDelegate));
 
-                        Foo foo = new Foo();
-                        foo.bar = new int[] { 23, 5, 42 };
+                        Foo foo = new Foo
+                        {
+                            bar = new int[] { 23, 5, 42 }
+                        };
 
                         IntPtr fooPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Foo)));
                         Marshal.StructureToPtr(foo, fooPtr, true);

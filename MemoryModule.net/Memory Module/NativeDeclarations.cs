@@ -193,6 +193,22 @@ namespace Scavanger.MemoryModule
         public fixed byte Name[1];
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct SYSTEM_INFO
+    {
+        public ushort wProcessorArchitecture;
+        public ushort wReserved;
+        public uint dwPageSize;
+        public void* lpMinimumApplicationAddress;
+        public void* lpMaximumApplicationAddress;
+        public void* dwActiveProcessorMask;
+        public uint dwNumberOfProcessors;
+        public uint dwProcessorType;
+        public uint dwAllocationGranularity;
+        public ushort wProcessorLevel;
+        public ushort wProcessorRevision;
+    };
+
     public enum MagicType : ushort
     {
         IMAGE_NT_OPTIONAL_HDR32_MAGIC = 0x10b,
@@ -316,38 +332,46 @@ namespace Scavanger.MemoryModule
         DLL_THREAD_ATTACH = 2,
         DLL_THREAD_DETACH = 3,
         DLL_PROCESS_DETACH = 0
-
     }
 
     unsafe class NativeDeclarations
     {
         public const ushort IMAGE_DOS_SIGNATURE = 0x5A4D;
         public const uint IMAGE_NT_SIGNATURE = 0x00004550;
+        public const uint IMAGE_FILE_MACHINE_I386 = 0x014c;
+        public const uint IMAGE_FILE_MACHINE_AMD64 = 0x8664;
         public const uint PAGE_NOCACHE = 0x200;
+        public const uint IMAGE_SCN_CNT_INITIALIZED_DATA = 0x00000040;
+        public const uint IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x00000080;
+        public const uint IMAGE_SCN_MEM_DISCARDABLE = 0x02000000;
+        public const uint IMAGE_SCN_MEM_NOT_CACHED = 0x04000000;
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern IntPtr VirtualAlloc(IntPtr lpAddress, uint dwSize, AllocationType flAllocationType, MemoryProtection flProtect);
+        public static extern void* VirtualAlloc(void* lpAddress, uint dwSize, AllocationType flAllocationType, MemoryProtection flProtect);
 
         [DllImport("msvcrt.dll", EntryPoint = "memset", CallingConvention = CallingConvention.Cdecl, SetLastError = false)]
-        public static extern IntPtr MemSet(IntPtr dest, int c, IntPtr count);
+        public static extern void* MemSet(void* dest, int c, void* count);
 
         [DllImport("kernel32.dll")]
-        public static extern bool IsBadReadPtr(IntPtr lp, uint ucb);
+        public static extern bool IsBadReadPtr(void* lp, uint ucb);
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        public static extern IntPtr LoadLibrary(string lpFileName);
+        public static extern void* LoadLibrary(string lpFileName);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
-        public static extern UIntPtr GetProcAddress(IntPtr hModule, string procName);
+        public static extern void* GetProcAddress(void* hModule, string procName);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool VirtualFree(IntPtr lpAddress, uint dwSize, AllocationType dwFreeType);
+        public static extern bool VirtualFree(void* lpAddress, uint dwSize, AllocationType dwFreeType);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool VirtualProtect(IntPtr lpAddress, uint dwSize, uint flNewProtect, out uint lpflOldProtect);
+        public static extern bool VirtualProtect(void* lpAddress, uint dwSize, uint flNewProtect, out uint lpflOldProtect);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool FreeLibrary(IntPtr hModule);
+        public static extern bool FreeLibrary(void* hModule);
+
+        [DllImport("kernel32.dll")]
+        public static extern void GetNativeSystemInfo(SYSTEM_INFO* lpSystemInfo);
 
         /// <summary>
         /// Equivalent to the IMAGE_FIRST_SECTION macro
@@ -357,7 +381,7 @@ namespace Scavanger.MemoryModule
         public static IMAGE_SECTION_HEADER* IMAGE_FIRST_SECTION(IMAGE_NT_HEADERS32* ntheader)
         {
             return ((IMAGE_SECTION_HEADER*)((int)ntheader +
-                 Marshal.OffsetOf(typeof(IMAGE_NT_HEADERS32), "OptionalHeader").ToInt32() +
+                 (int)Marshal.OffsetOf(typeof(IMAGE_NT_HEADERS32), "OptionalHeader") +
                  ntheader->FileHeader.SizeOfOptionalHeader));
         }
 

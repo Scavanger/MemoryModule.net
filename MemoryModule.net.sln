@@ -1,9 +1,14 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27130.2036
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MemoryModule.net", "MemoryModule.net\MemoryModule.net.csproj", "{9A7A2A19-456F-41B4-964D-2416ABB0368A}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SampleDLL", "SampleDLL\SampleDLL.vcxproj", "{7134B3F9-6702-497D-90D5-7A229666E206}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9A7A2A19-456F-41B4-964D-2416ABB0368A} = {9A7A2A19-456F-41B4-964D-2416ABB0368A}
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -38,5 +43,8 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B9D09707-0455-4301-B850-A3A819F5EA38}
 	EndGlobalSection
 EndGlobal
