@@ -23,7 +23,8 @@ namespace Scavanger.MemoryModule
         {
 
 #if DEBUG
-            string dllPath = @"..\..\..\Debug\SampleDll.dll";
+            //string dllPath = @"..\..\..\Debug\SampleDll.dll";
+            string dllPath = "Tests.exe";
 #else
             string dllPath = @"..\..\..\Release\SampleDll.dll";
 #endif
@@ -34,6 +35,8 @@ namespace Scavanger.MemoryModule
                 {
                     using (MemoryModule memModule = new MemoryModule(File.ReadAllBytes(dllPath)))
                     {
+                        memModule.MemoryCallEntryPoint();
+
                         AddNumbersDelegate AddNumbers = (AddNumbersDelegate)memModule.GetDelegateFromFuncName("AddNumbers", typeof(AddNumbersDelegate));
                         if (AddNumbers != null)
                             Console.WriteLine("The Answer: {0:G}", AddNumbers(40, 2));

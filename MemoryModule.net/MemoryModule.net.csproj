@@ -64,6 +64,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="GlobalSuppressions.cs" />
     <Compile Include="Memory Module\NativeDllLoadException.cs" />
     <Compile Include="Memory Module\MemoryModule.cs" />
     <Compile Include="Memory Module\NativeDeclarations.cs" />

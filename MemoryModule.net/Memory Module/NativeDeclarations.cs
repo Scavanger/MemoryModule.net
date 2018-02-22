@@ -1,9 +1,9 @@
 ﻿/*                                                               
- * Memory Module.net 0.1
+ * Memory Module.net 0.2
  * 
  * Loading a native Dll from memory, a C#/.net port of Memory Module
  * 
- * (c) 2012 by Andreas Kanzler (andi_kanzler(at)gmx.de)
+ * (c) 2012-2018 by Andreas Kanzler (andi_kanzler(at)gmx.de)
  * 
  * Memory Module is original developed by Joachim Bauch (mail(at)joachim-bauch.de)  
  * https://github.com/fancycode/MemoryModule
@@ -35,6 +35,7 @@ using System.Runtime.InteropServices;
 
 namespace Scavanger.MemoryModule
 {
+    #region structs
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct IMAGE_DOS_HEADER32
     {
@@ -209,6 +210,20 @@ namespace Scavanger.MemoryModule
         public ushort wProcessorRevision;
     };
 
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct IMAGE_TLS_DIRECTORY
+    {
+        public uint StartAddressOfRawData;
+        public uint EndAddressOfRawData;
+        public uint AddressOfIndex;             // PDWORD
+        public uint AddressOfCallBacks;         // PIMAGE_TLS_CALLBACK *
+        public uint SizeOfZeroFill;
+        public uint Characteristics;
+        // union not defined, we don't use it
+    }
+    #endregion
+
+    #region enums
     public enum MagicType : ushort
     {
         IMAGE_NT_OPTIONAL_HDR32_MAGIC = 0x10b,
@@ -333,6 +348,7 @@ namespace Scavanger.MemoryModule
         DLL_THREAD_DETACH = 3,
         DLL_PROCESS_DETACH = 0
     }
+    #endregion
 
     unsafe class NativeDeclarations
     {
@@ -345,6 +361,7 @@ namespace Scavanger.MemoryModule
         public const uint IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x00000080;
         public const uint IMAGE_SCN_MEM_DISCARDABLE = 0x02000000;
         public const uint IMAGE_SCN_MEM_NOT_CACHED = 0x04000000;
+        public const uint IMAGE_FILE_DLL = 0x2000;
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern void* VirtualAlloc(void* lpAddress, uint dwSize, AllocationType flAllocationType, MemoryProtection flProtect);
