@@ -29,28 +29,45 @@
  * 
  */
 
+// Let's forget the # in C# ;)
+
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.ComponentModel;
 using System.Linq;
 
+using Win = Scavanger.MemoryModule.NativeDeclarations;
+
+#if WIN64
+using SizeT = System.UInt64;
+using PtrDiffT = System.Int64;
+using UIntPtrT = System.UInt64;
+using Farproc = System.Int64;
+#elif WIN32
+using SizeT = System.UInt32;
+using PtrDiffT = System.Int32;
+using UIntPtrT = System.UInt32;
+using Farproc = System.Int32;
+#endif
+
 namespace Scavanger.MemoryModule
 {
     unsafe class MemoryModule : IDisposable
     {
         public bool Disposed { get; private set; }
-        public bool IsRelocated { get; private set; }
         public bool IsDll { get; private set; }
 
         private GCHandle _dataHandle;
-        private IMAGE_NT_HEADERS32* _headers;
+        private IMAGE_NT_HEADERS* _headers;
         private byte* _codeBase;
-        private List<IntPtr> _modules;
+        private List<HCoustomMudule> _modules;
         private bool _initialized;
         private uint _pageSize;
         private DllEntryDelegate _dllEntry;
         private ExeEntryDelegate _exeEntry;
+        private bool _isRelocated;
+        private List<IntPtr> _blockedMemory;
 
         [UnmanagedFunctionPointer(CallingConvention.Winapi)]
         private delegate bool DllEntryDelegate(void* hinstDLL, DllReason fdwReason, void* lpReserved);
@@ -58,7 +75,7 @@ namespace Scavanger.MemoryModule
         [UnmanagedFunctionPointer(CallingConvention.Winapi)]
         private delegate int ExeEntryDelegate();
 
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        [UnmanagedFunctionPointer(CallingConvention.Winapi)]
         private delegate void ImageTlsDelegate(void* dllHandle, DllReason reason, void* reserved);
 
 
@@ -75,13 +92,13 @@ namespace Scavanger.MemoryModule
             _headers = null;
             _codeBase = null;
             _pageSize = 0;
-            _modules = new List<IntPtr>();
+            _modules = new List<HCoustomMudule>();
             _initialized = false;
             _exeEntry = null;
             _dllEntry = null;
 
             Disposed = false;
-            IsRelocated = false;
+            _isRelocated = false;
 
             MemoryLoadLibrary(data);
         }
@@ -89,6 +106,28 @@ namespace Scavanger.MemoryModule
         ~MemoryModule()
         {
             Dispose();
+        }
+
+        /// <summary>
+        /// Returns a delegate for a function inside the DLL.
+        /// </summary>
+        /// <typeparam name="TDelegate">The type of the delegate.</typeparam>
+        /// <param name="funcName">The name of the function to be searched.</param>
+        /// <returns>A delegate instance of type TDelegate</returns>
+        public TDelegate GetDelegateFromFuncName<TDelegate>(string funcName) where TDelegate : class
+        {
+            /* Örks!
+                What i want is:
+                public TDelegate GetDelegateFromFuncName<TDelegate>(string funcName) where TDelegate : Delegate
+                {
+                    return (TDelegate)GetDelegateFromFuncName(funcName, typeof(TDelegate));
+                }
+            */
+
+            if (!typeof(Delegate).IsAssignableFrom(typeof(TDelegate)))
+                throw new InvalidOperationException(typeof(TDelegate).Name + " is not a delegate");
+
+            return (TDelegate)(object)GetDelegateFromFuncName(funcName, typeof(TDelegate));
         }
 
         /// <summary>
@@ -118,6 +157,7 @@ namespace Scavanger.MemoryModule
                 throw new InvalidOperationException("Dll is not initialized.");
 
             funcName = funcName.ToLower(); //Ignore case
+            Delegate @delegate;
 
             //Todo:
             // Add support for stdcall: _funcname@
@@ -154,7 +194,12 @@ namespace Scavanger.MemoryModule
                 throw new NativeDllLoadException("IDX don't match number of funtions.");
 
             funcPtr = _codeBase + (*(uint*)(_codeBase + exports->AddressOfFunctions + (idx * 4)));
-            return Marshal.GetDelegateForFunctionPointer((IntPtr)funcPtr, t);
+            @delegate = Marshal.GetDelegateForFunctionPointer((IntPtr)funcPtr, t);
+
+            if (@delegate == null)
+                throw new NativeDllLoadException("Unable to get managed delegate.");
+
+            return @delegate;
         }
 
         /// <summary>
@@ -166,7 +211,7 @@ namespace Scavanger.MemoryModule
             if (Disposed)
                 throw new InvalidOperationException("Object disposed");
 
-            if (IsDll || _exeEntry == null || !IsRelocated)
+            if (IsDll || _exeEntry == null || !_isRelocated)
                 throw new NativeDllLoadException("Unable to call entry point. Is loaded module a dll?");
 
             return _exeEntry();
@@ -174,30 +219,30 @@ namespace Scavanger.MemoryModule
 
         private void MemoryLoadLibrary(byte[] data)
         {
-            IMAGE_DOS_HEADER32* dosHeader;
-            IMAGE_NT_HEADERS32* oldHeader;
+            IMAGE_DOS_HEADER* dosHeader;
+            IMAGE_NT_HEADERS* oldHeader;
             IMAGE_SECTION_HEADER* section;
             SYSTEM_INFO systemInfo;
             void* dllEntryPtr;
             void* exeEntryPtr;
             byte* headers, dataPtr, code;
-            uint optionalSectionSize;
-            uint lastSectionEnd = 0;
-            uint alignedImageSize;
-            uint locationDelta;
+            SizeT optionalSectionSize;
+            SizeT lastSectionEnd = 0;
+            SizeT alignedImageSize;
+            PtrDiffT locationDelta;
 
             _dataHandle = GCHandle.Alloc(data, GCHandleType.Pinned);
             if (!_dataHandle.IsAllocated)
                 throw new NativeDllLoadException("Can't allocate memory.");
 
-            dataPtr = (byte*)_dataHandle.AddrOfPinnedObject().ToPointer();
+            dataPtr = (byte*)_dataHandle.AddrOfPinnedObject();
 
-            dosHeader = (IMAGE_DOS_HEADER32*)dataPtr;
-            if (dosHeader->e_magic != NativeDeclarations.IMAGE_DOS_SIGNATURE)
+            dosHeader = (IMAGE_DOS_HEADER*)dataPtr;
+            if (dosHeader->e_magic != Win.IMAGE_DOS_SIGNATURE)
                 throw new BadImageFormatException("Not a valid executable file.");
 
-            oldHeader = (IMAGE_NT_HEADERS32*)(dataPtr + dosHeader->e_lfanew);
-            if (oldHeader->Signature != NativeDeclarations.IMAGE_NT_SIGNATURE)
+            oldHeader = (IMAGE_NT_HEADERS*)(dataPtr + dosHeader->e_lfanew);
+            if (oldHeader->Signature != Win.IMAGE_NT_SIGNATURE)
                 throw new BadImageFormatException("Not a valid PE file.");
 
             if (oldHeader->FileHeader.Machine != GetMachineType())
@@ -206,11 +251,11 @@ namespace Scavanger.MemoryModule
             if ((oldHeader->OptionalHeader.SectionAlignment & 1) > 0)
                 throw new BadImageFormatException("Wrong section alignment");
 
-            section = NativeDeclarations.IMAGE_FIRST_SECTION(oldHeader);
+            section = Win.IMAGE_FIRST_SECTION(oldHeader);
             optionalSectionSize = oldHeader->OptionalHeader.SectionAlignment;
             for (int i = 0; i < oldHeader->FileHeader.NumberOfSections; i++, section++)
             {
-                uint endOfSection;
+                SizeT endOfSection;
                 if (section->SizeOfRawData == 0) // Section without data in the DLL           
                     endOfSection = section->VirtualAddress + optionalSectionSize;
                 else
@@ -220,60 +265,71 @@ namespace Scavanger.MemoryModule
                     lastSectionEnd = endOfSection;
             }
 
-            NativeDeclarations.GetNativeSystemInfo(&systemInfo);
+            Win.GetNativeSystemInfo(&systemInfo);
             alignedImageSize = AlignValueUp(oldHeader->OptionalHeader.SizeOfImage, systemInfo.dwPageSize);
             if (alignedImageSize != AlignValueUp(lastSectionEnd, systemInfo.dwPageSize))
                 throw new BadImageFormatException("Wrong section alignment.");
 
-            code = (byte*)NativeDeclarations.VirtualAlloc(
+            code = (byte*)Win.VirtualAlloc(
                 (void*)(oldHeader->OptionalHeader.ImageBase),
                 oldHeader->OptionalHeader.SizeOfImage,
-                AllocationType.RESERVE,
+                AllocationType.RESERVE | AllocationType.COMMIT,
                 MemoryProtection.READWRITE);
 
             if (code == null)
             {
-                code = (byte*)NativeDeclarations.VirtualAlloc(
+                code = (byte*)Win.VirtualAlloc(
                 null,
                 oldHeader->OptionalHeader.SizeOfImage,
-                AllocationType.RESERVE,
+                AllocationType.RESERVE | AllocationType.COMMIT,
                 MemoryProtection.READWRITE);
             }
 
             if (code == null)
                 throw new NativeDllLoadException("Out of Memory");
 
-            //NativeDeclarations.VirtualAlloc(
-            //    new IntPtr(code),
-            //    ntHeader->OptionalHeader.SizeOfImage,
-            //    AllocationType.COMMIT,
-            //    MemoryProtection.READWRITE);
+#if WIN64
+            while ((((ulong)code) >> 32) < (((ulong)(code + alignedImageSize)) >> 32))
+            {
+                _blockedMemory.Add((IntPtr)code);
+
+                code = (byte*)Win.VirtualAlloc(
+                null,
+                alignedImageSize,
+                AllocationType.RESERVE | AllocationType.COMMIT,
+                MemoryProtection.READWRITE);
+
+                if (code == null)
+                    throw new NativeDllLoadException("Out of Memory");
+
+            }
+#endif
 
             _pageSize = systemInfo.dwPageSize;
             _codeBase = code;
-            IsDll = (oldHeader->FileHeader.Characteristics & NativeDeclarations.IMAGE_FILE_DLL) != 0;
+            IsDll = (oldHeader->FileHeader.Characteristics & Win.IMAGE_FILE_DLL) != 0;
 
-            headers = (byte*)NativeDeclarations.VirtualAlloc(
+            headers = (byte*)Win.VirtualAlloc(
                 code,
                 oldHeader->OptionalHeader.SizeOfHeaders,
                 AllocationType.COMMIT,
                 MemoryProtection.READWRITE);
 
             if (headers == null)
-                throw new Win32Exception();
+                throw new NativeDllLoadException("Out of Memory");
 
-            Marshal.Copy(data, 0, new IntPtr(headers), (int)(dosHeader->e_lfanew + oldHeader->OptionalHeader.SizeOfHeaders));
-            _headers = (IMAGE_NT_HEADERS32*)&((headers))[dosHeader->e_lfanew];
+            Marshal.Copy(data, 0, (IntPtr)headers, (int)(dosHeader->e_lfanew + oldHeader->OptionalHeader.SizeOfHeaders));
+            _headers = (IMAGE_NT_HEADERS*)&(headers)[dosHeader->e_lfanew];
 
-            _headers->OptionalHeader.ImageBase = (uint)code;
+            _headers->OptionalHeader.ImageBase = (UIntPtrT)code;
 
             CopySections(data, oldHeader);
 
-            locationDelta = _headers->OptionalHeader.ImageBase - oldHeader->OptionalHeader.ImageBase;
+            locationDelta = (PtrDiffT)(_headers->OptionalHeader.ImageBase - oldHeader->OptionalHeader.ImageBase);
             if (locationDelta != 0)
-                IsRelocated = PerformBaseRelocation(locationDelta);
+                _isRelocated = PerformBaseRelocation(locationDelta);
             else
-                IsRelocated = false;
+                _isRelocated = true;
 
             BuildImportTable();
             FinalizeSections();
@@ -305,26 +361,24 @@ namespace Scavanger.MemoryModule
 
         private void ExecuteTLS()
         {
-            IMAGE_TLS_DIRECTORY* tls;
-            byte* callbackPtr;
-            ImageTlsDelegate tlsdelegate;
+            IMAGE_TLS_DIRECTORY* tlsDir;
+            UIntPtrT* callbackPtr;
+            ImageTlsDelegate tls;
 
             IMAGE_DATA_DIRECTORY* directory = &_headers->OptionalHeader.TLSTable;
             if (directory->VirtualAddress == 0)
                 return;
 
-            tls = (IMAGE_TLS_DIRECTORY*)(_codeBase + directory->VirtualAddress);
-            callbackPtr = (byte*)tls->AddressOfCallBacks;
+            tlsDir = (IMAGE_TLS_DIRECTORY*)(_codeBase + directory->VirtualAddress);
+            callbackPtr = (UIntPtrT*)tlsDir->AddressOfCallBacks;
             if (callbackPtr != null)
             {
-                while (*callbackPtr > 0)
+                for (; *callbackPtr > 0; callbackPtr++)
                 {
-                    tlsdelegate = (ImageTlsDelegate)Marshal.GetDelegateForFunctionPointer((IntPtr)callbackPtr, typeof(ImageTlsDelegate));
-                    tlsdelegate(_codeBase, DllReason.DLL_PROCESS_ATTACH, null);
-                    callbackPtr++;
+                    tls = (ImageTlsDelegate)Marshal.GetDelegateForFunctionPointer((IntPtr)(*callbackPtr), typeof(ImageTlsDelegate));
+                    tls(_codeBase, DllReason.DLL_PROCESS_ATTACH, null);
                 }
             }
-
         }
 
         private readonly PageProtection[,,] ProtectionFlags = new PageProtection[,,]
@@ -342,9 +396,14 @@ namespace Scavanger.MemoryModule
 
         private void FinalizeSections()
         {
-            IMAGE_SECTION_HEADER* section = NativeDeclarations.IMAGE_FIRST_SECTION(_headers);
+            IMAGE_SECTION_HEADER* section = Win.IMAGE_FIRST_SECTION(_headers);
 
-            uint imageOffset = 0;
+#if WIN64
+            UIntPtrT imageOffset = ((UIntPtrT)_headers->OptionalHeader.ImageBase & 0xffffffff00000000);
+#elif WIN32
+            UIntPtrT imageOffset = 0;
+#endif
+
 
             SectionFinalizeData sectionData = new SectionFinalizeData();
             sectionData.Address = (void*)(section->PhysicalAddress | imageOffset);
@@ -357,24 +416,24 @@ namespace Scavanger.MemoryModule
             // loop through all sections and change access flags
             for (int i = 1; i < _headers->FileHeader.NumberOfSections; i++, section++)
             {
-                void* sectionAddress = (void*)((uint)section->PhysicalAddress | imageOffset);
+                void* sectionAddress = (void*)(section->PhysicalAddress | imageOffset);
                 void* alignedAddress = AlignAddressDown(sectionAddress, _pageSize);
-                uint sectionSize = GetRealSectionSize(section);
+                SizeT sectionSize = GetRealSectionSize(section);
                 // Combine access flags of all sections that share a page
                 // TODO(fancycode): We currently share flags of a trailing large section
                 //   with the page of a first small section. This should be optimized.
-                if (sectionData.AlignedAddress == alignedAddress || (uint)sectionData.Address + sectionData.Size > (uint)alignedAddress)
+                if (sectionData.AlignedAddress == alignedAddress || (UIntPtrT)sectionData.Address + sectionData.Size > (UIntPtrT)alignedAddress)
                 {
                     // Section shares page with previous
-                    if ((section->Characteristics & NativeDeclarations.IMAGE_SCN_MEM_DISCARDABLE) == 0 || (sectionData.Characteristics & NativeDeclarations.IMAGE_SCN_MEM_DISCARDABLE) == 0)
+                    if ((section->Characteristics & Win.IMAGE_SCN_MEM_DISCARDABLE) == 0 || (sectionData.Characteristics & Win.IMAGE_SCN_MEM_DISCARDABLE) == 0)
                     {
-                        sectionData.Characteristics = (sectionData.Characteristics | section->Characteristics) & ~NativeDeclarations.IMAGE_SCN_MEM_DISCARDABLE;
+                        sectionData.Characteristics = (sectionData.Characteristics | section->Characteristics) & ~Win.IMAGE_SCN_MEM_DISCARDABLE;
                     }
                     else
                     {
                         sectionData.Characteristics |= section->Characteristics;
                     }
-                    sectionData.Size = (((uint)sectionAddress) + (sectionSize)) - (uint)sectionData.Address;
+                    sectionData.Size = (((UIntPtrT)sectionAddress) + (sectionSize)) - (UIntPtrT)sectionData.Address;
                     continue;
                 }
 
@@ -399,7 +458,7 @@ namespace Scavanger.MemoryModule
             if (sectionData.Size == 0)
                 return;
 
-            if ((sectionData.Characteristics & NativeDeclarations.IMAGE_SCN_MEM_DISCARDABLE) > 0)
+            if ((sectionData.Characteristics & Win.IMAGE_SCN_MEM_DISCARDABLE) > 0)
             {
                 // section is not needed any more and can safely be freed
                 if (sectionData.Address == sectionData.AlignedAddress &&
@@ -409,7 +468,7 @@ namespace Scavanger.MemoryModule
                    )
                 {
                     // Only allowed to decommit whole pages
-                    NativeDeclarations.VirtualFree(sectionData.Address, sectionData.Size, AllocationType.DECOMMIT);
+                    Win.VirtualFree(sectionData.Address, sectionData.Size, AllocationType.DECOMMIT);
                 }
                 return;
             }
@@ -419,57 +478,15 @@ namespace Scavanger.MemoryModule
             readable = (sectionData.Characteristics & (uint)ImageSectionFlags.IMAGE_SCN_MEM_READ) != 0 ? 1 : 0;
             writeable = (sectionData.Characteristics & (uint)ImageSectionFlags.IMAGE_SCN_MEM_WRITE) != 0 ? 1 : 0;
             protect = (uint)ProtectionFlags[executable, readable, writeable];
-            if ((sectionData.Characteristics & NativeDeclarations.IMAGE_SCN_MEM_NOT_CACHED) > 0)
+            if ((sectionData.Characteristics & Win.IMAGE_SCN_MEM_NOT_CACHED) > 0)
             {
-                protect |= NativeDeclarations.PAGE_NOCACHE;
+                protect |= Win.PAGE_NOCACHE;
             }
 
             // change memory access flags
-            if (!NativeDeclarations.VirtualProtect(sectionData.Address, sectionData.Size, protect, out oldProtect))
+            if (!Win.VirtualProtect(sectionData.Address, sectionData.Size, protect, out oldProtect))
                 throw new NativeDllLoadException("Error protecting memory page");
         }
-
-
-        // Old FinalizeSections
-        //private void FinalizeSections()
-        //{
-        //    int imageOffset = 0;
-
-        //    IMAGE_SECTION_HEADER* section = (IMAGE_SECTION_HEADER*)NativeDeclarations.IMAGE_FIRST_SECTION(_headers);
-
-        //    for (int i = 0; i < _headers->FileHeader.NumberOfSections; i++, section++)
-        //    {
-        //        uint protect, oldProtect, size;
-
-        //        int executable = (section->Characteristics & (uint)ImageSectionFlags.IMAGE_SCN_MEM_EXECUTE) != 0 ? 1 : 0;
-        //        int readable = (section->Characteristics & (uint)ImageSectionFlags.IMAGE_SCN_MEM_READ) != 0 ? 1 : 0;
-        //        int writeable = (section->Characteristics & (uint)ImageSectionFlags.IMAGE_SCN_MEM_WRITE) != 0 ? 1 : 0;
-
-        //        if ((section->Characteristics & (int)ImageSectionFlags.IMAGE_SCN_MEM_DISCARDABLE) > 0)
-        //        {
-        //            NativeDeclarations.VirtualFree((void*)(section->PhysicalAddress | (uint)imageOffset), section->SizeOfRawData, AllocationType.DECOMMIT);
-        //            continue;
-        //        }
-        //        protect = (uint)ProtectionFlags[executable, readable, writeable];
-        //        if ((section->Characteristics & (uint)ImageSectionFlags.IMAGE_SCN_MEM_NOT_CACHED) > 0)
-        //            protect |= NativeDeclarations.PAGE_NOCACHE;
-
-        //        size = section->SizeOfRawData;
-        //        if (size == 0)
-        //        {
-        //            if ((section->Characteristics & (uint)ImageSectionContains.INITIALIZED_DATA) > 0)
-        //                size = _headers->OptionalHeader.SizeOfInitializedData;
-        //            else if ((section->Characteristics & (uint)ImageSectionContains.UNINITIALIZED_DATA) > 0)
-        //                size = _headers->OptionalHeader.SizeOfUninitializedData;
-        //        }
-
-        //        if (size > 0)
-        //        {
-        //            if (!NativeDeclarations.VirtualProtect((void*)(section->PhysicalAddress | (uint)imageOffset), size, protect, out oldProtect))
-        //                throw new Win32Exception("Can't change section access rights");
-        //        }
-        //    }
-        //}
 
         private void BuildImportTable()
         {
@@ -479,59 +496,56 @@ namespace Scavanger.MemoryModule
 
 
             IMAGE_IMPORT_DESCRIPTOR* importDesc = (IMAGE_IMPORT_DESCRIPTOR*)(_codeBase + directory->VirtualAddress);
-            for (; !NativeDeclarations.IsBadReadPtr((importDesc), (uint)Marshal.SizeOf(typeof(IMAGE_IMPORT_DESCRIPTOR))) && importDesc->Name > 0; importDesc++)
+            for (; !Win.IsBadReadPtr((importDesc), (UIntPtrT)Marshal.SizeOf(typeof(IMAGE_IMPORT_DESCRIPTOR))) && importDesc->Name > 0; importDesc++)
             {
-                uint* thunkRef;
-                int* funcRef;
+                UIntPtrT* thunkRef;
+                Farproc* funcRef;
 
-                string funcName = Marshal.PtrToStringAnsi(new IntPtr(_codeBase + importDesc->Name));
-                void* handle = NativeDeclarations.LoadLibrary(funcName);
+                HCoustomMudule handle = Win.LoadLibrary(_codeBase + importDesc->Name);
 
-                if (handle == null)
+                if (InvalidHandle(handle))
                 {
                     if (_modules.Any())
-                        _modules.ForEach(m => NativeDeclarations.FreeLibrary((void*)m));
+                        _modules.ForEach(m => Win.FreeLibrary(m));
 
-                    throw new NativeDllLoadException("Can't load libary " + funcName);
+                    throw new NativeDllLoadException("Can't load libary " + Marshal.PtrToStringAnsi(new IntPtr(_codeBase + importDesc->Name)));
                 }
 
-                _modules.Add((IntPtr)handle);
+                _modules.Add(handle);
                 if (importDesc->OriginalFirstThunk > 0)
                 {
-                    thunkRef = (uint*)(_codeBase + importDesc->OriginalFirstThunk);
-                    funcRef = (int*)(_codeBase + importDesc->FirstThunk);
+                    thunkRef = (UIntPtrT*)(_codeBase + importDesc->OriginalFirstThunk);
+                    funcRef = (Farproc*)(_codeBase + importDesc->FirstThunk);
                 }
                 else
                 {
                     // no hint table
-                    thunkRef = (uint*)(_codeBase + importDesc->FirstThunk);
-                    funcRef = (int*)(_codeBase + importDesc->FirstThunk);
+                    thunkRef = (UIntPtrT*)(_codeBase + importDesc->FirstThunk);
+                    funcRef = (Farproc*)(_codeBase + importDesc->FirstThunk);
                 }
                 for (; *thunkRef > 0; thunkRef++, funcRef++)
                 {
                     string procName;
-                    if (NativeDeclarations.IMAGE_SNAP_BY_ORDINAL32(*thunkRef))
+                    if (Win.IMAGE_SNAP_BY_ORDINAL(*thunkRef))
                     {
-                        procName = Marshal.PtrToStringAnsi(new IntPtr(NativeDeclarations.IMAGE_ORDINAL32(*thunkRef)));
-                        *funcRef = (int)NativeDeclarations.GetProcAddress(handle, procName);
+                        procName = Marshal.PtrToStringAnsi(new IntPtr());
+                        *funcRef = (Farproc)Win.GetProcAddress(handle, (byte*)Win.IMAGE_ORDINAL(*thunkRef));
                     }
                     else
                     {
                         IMAGE_IMPORT_BY_NAME* thunkData = (IMAGE_IMPORT_BY_NAME*)(_codeBase + (*thunkRef));
-                        procName = Marshal.PtrToStringAnsi(new IntPtr(thunkData->Name));
-                        *funcRef = (int)NativeDeclarations.GetProcAddress(handle, procName);
+                        *funcRef = (Farproc)Win.GetProcAddress(handle, thunkData->Name);
                     }
                     if (*funcRef == 0)
-                        throw new NativeDllLoadException("Can't get adress for " + procName);
+                        throw new NativeDllLoadException("Can't get adress for imported function.");
 
                 }
 
             }
         }
 
-        private bool PerformBaseRelocation(uint delta)
+        private bool PerformBaseRelocation(PtrDiffT delta)
         {
-
             int imageSizeOfBaseRelocation = Marshal.SizeOf(typeof(IMAGE_BASE_RELOCATION));
             IMAGE_DATA_DIRECTORY* directory = &_headers->OptionalHeader.BaseRelocationTable;
             if (directory->Size == 0)
@@ -558,7 +572,11 @@ namespace Scavanger.MemoryModule
                                 break;
                             case BasedRelocationType.IMAGE_REL_BASED_HIGHLOW:
                                 uint* patchAddrHL = (uint*)(dest + offset);
-                                *patchAddrHL += delta;
+                                *patchAddrHL += (uint)delta;
+                                break;
+                            case BasedRelocationType.IMAGE_REL_BASED_DIR64:
+                                ulong* patchAddr64 = (ulong*)(dest + offset);
+                                *patchAddr64 += (ulong)delta;
                                 break;
                             default:
                                 break;
@@ -571,18 +589,18 @@ namespace Scavanger.MemoryModule
             return true;
         }
 
-        void CopySections(byte[] data, IMAGE_NT_HEADERS32* oldHeader)
+        void CopySections(byte[] data, IMAGE_NT_HEADERS* oldHeader)
         {
             if (data == null)
                 throw new ArgumentNullException("data");
 
-            if (oldHeader->Signature != NativeDeclarations.IMAGE_NT_SIGNATURE)
+            if (oldHeader->Signature != Win.IMAGE_NT_SIGNATURE)
                 throw new BadImageFormatException("Invalid PE-Header");
 
             uint size;
             byte* dest;
 
-            IMAGE_SECTION_HEADER* section = NativeDeclarations.IMAGE_FIRST_SECTION(_headers);
+            IMAGE_SECTION_HEADER* section = Win.IMAGE_FIRST_SECTION(_headers);
 
             for (int i = 0; i < _headers->FileHeader.NumberOfSections; i++, section++)
             {
@@ -593,7 +611,7 @@ namespace Scavanger.MemoryModule
                     size = oldHeader->OptionalHeader.SectionAlignment;
                     if (size > 0)
                     {
-                        dest = (byte*)NativeDeclarations.VirtualAlloc(
+                        dest = (byte*)Win.VirtualAlloc(
                             _codeBase + section->VirtualAddress,
                             size,
                             AllocationType.COMMIT,
@@ -605,12 +623,12 @@ namespace Scavanger.MemoryModule
                         dest = _codeBase + section->VirtualAddress;
 
                         section->PhysicalAddress = (uint)dest & 0xffffffff;
-                        NativeDeclarations.MemSet(dest, 0, (void*)size);
+                        Win.MemSet(dest, 0, (void*)size);
                     }
                     continue;
                 }
 
-                dest = (byte*)NativeDeclarations.VirtualAlloc(
+                dest = (byte*)Win.VirtualAlloc(
                            _codeBase + section->VirtualAddress,
                             section->SizeOfRawData,
                             AllocationType.COMMIT,
@@ -619,43 +637,34 @@ namespace Scavanger.MemoryModule
                 if (dest == null)
                     throw new NativeDllLoadException("Out of memory.");
 
+                dest = _codeBase + section->VirtualAddress;
                 Marshal.Copy(data, (int)section->PointerToRawData, (IntPtr)dest, (int)section->SizeOfRawData);
-                section->PhysicalAddress = (uint)dest & 0xffffffff; ;
+                section->PhysicalAddress = (uint)dest & 0xffffffff;
             }
         }
 
         #region Helper
 
-        private uint GetMachineType()
-        {
-            return Environment.Is64BitProcess ? NativeDeclarations.IMAGE_FILE_MACHINE_AMD64 : NativeDeclarations.IMAGE_FILE_MACHINE_I386;
-        }
+        private bool InvalidHandle(void* h) => h == (void*)-1 || h == (void*)0;
 
-        private uint AlignValueUp(uint value, uint alignment)
-        {
-            return (value + alignment - 1) & ~(alignment - 1);
-        }
+        private uint GetMachineType() => Environment.Is64BitProcess ? Win.IMAGE_FILE_MACHINE_AMD64 : Win.IMAGE_FILE_MACHINE_I386;
 
-        private static uint AlignValueDown(uint value, uint alignment)
-        {
-            return value & ~(alignment - 1);
-        }
+        private SizeT AlignValueUp(SizeT value, SizeT alignment) => (value + alignment - 1) & ~(alignment - 1);
 
-        private static void* AlignAddressDown(void* address, uint alignment)
-        {
-            return (void*)AlignValueDown((uint)address, alignment);
-        }
+        private static UIntPtrT AlignValueDown(UIntPtrT value, UIntPtrT alignment) => value & ~(alignment - 1);
 
-        private uint GetRealSectionSize(IMAGE_SECTION_HEADER* section)
+        private static void* AlignAddressDown(void* address, UIntPtrT alignment) => (void*)AlignValueDown((UIntPtrT)address, alignment);
+
+        private SizeT GetRealSectionSize(IMAGE_SECTION_HEADER* section)
         {
             uint size = section->SizeOfRawData;
             if (size == 0)
             {
-                if ((section->Characteristics & NativeDeclarations.IMAGE_SCN_CNT_INITIALIZED_DATA) > 0)
+                if ((section->Characteristics & Win.IMAGE_SCN_CNT_INITIALIZED_DATA) > 0)
                 {
                     size = _headers->OptionalHeader.SizeOfInitializedData;
                 }
-                else if ((section->Characteristics & NativeDeclarations.IMAGE_SCN_CNT_UNINITIALIZED_DATA) > 0)
+                else if ((section->Characteristics & Win.IMAGE_SCN_CNT_UNINITIALIZED_DATA) > 0)
                 {
                     size = _headers->OptionalHeader.SizeOfUninitializedData;
                 }
@@ -663,19 +672,12 @@ namespace Scavanger.MemoryModule
             return size;
         }
 
-        private static void* OffsetPointer(void* data, int offset)
-        {
-            return (void*)((int)data + offset);
-        }
 
 
         #endregion
 
         #region IDisposable
-        public void Close()
-        {
-            ((IDisposable)this).Dispose();
-        }
+        public void Close() => ((IDisposable)this).Dispose();
 
         void IDisposable.Dispose()
         {
@@ -696,15 +698,15 @@ namespace Scavanger.MemoryModule
 
             if (_modules.Count > 0)
             {
-                foreach (IntPtr module in _modules)
+                foreach (HCoustomMudule module in _modules)
                 {
-                    if (module != (IntPtr)(-1) || module != IntPtr.Zero) // INVALID_HANDLE
-                        NativeDeclarations.FreeLibrary((void*)module);
+                    if (!InvalidHandle(module)) // INVALID_HANDLE
+                        Win.FreeLibrary(module);
                 }
             }
 
             if (_codeBase != null)
-                NativeDeclarations.VirtualFree(_codeBase, 0, AllocationType.RELEASE);
+                Win.VirtualFree(_codeBase, 0, AllocationType.RELEASE);
 
             Disposed = true;
 
@@ -715,7 +717,7 @@ namespace Scavanger.MemoryModule
         {
             public void* Address { get; set; }
             public void* AlignedAddress { get; set; }
-            public uint Size { get; set; }
+            public SizeT Size { get; set; }
             public uint Characteristics { get; set; }
             public bool Last { get; set; }
         }

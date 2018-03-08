@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 using System.IO;
+using System.Threading;
 
 namespace Scavanger.MemoryModule
 {
-    class Program
+    unsafe class Program
     {
         [StructLayout(LayoutKind.Sequential)]
         struct Foo
@@ -19,30 +20,45 @@ namespace Scavanger.MemoryModule
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate int AddNumbersDelegate(int a, int b);
 
+        [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+        private delegate int TlsDelegate();
+
         static void Main(string[] args)
         {
 
+
 #if DEBUG
-            //string dllPath = @"..\..\..\Debug\SampleDll.dll";
-            string dllPath = "Tests.exe";
+            
+#if WIN64
+            string dllPath = @"..\..\..\..\x64\Debug\SampleDll.dll";
+#elif WIN32
+            string dllPath = @"..\..\..\Debug\SampleDll.dll";
+#endif
 #else
+#if WIN64
+            //string dllPath = @"..\..\..\..\X64\Release\SampleDll.dll";
+            string dllPath = "SampleDll.dll";
+#elif WIN32
             string dllPath = @"..\..\..\Release\SampleDll.dll";
 #endif
-
+#endif
             if (File.Exists(dllPath))
             {
                 try
                 {
                     using (MemoryModule memModule = new MemoryModule(File.ReadAllBytes(dllPath)))
                     {
-                        memModule.MemoryCallEntryPoint();
-
+                        // Normal fucnction call
                         AddNumbersDelegate AddNumbers = (AddNumbersDelegate)memModule.GetDelegateFromFuncName("AddNumbers", typeof(AddNumbersDelegate));
-                        if (AddNumbers != null)
-                            Console.WriteLine("The Answer: {0:G}", AddNumbers(40, 2));
+                        Console.WriteLine("The Answer: {0:G}", AddNumbers(40, 2));
 
+                        // Normal fucnction call, with generics
+                        AddNumbersDelegate AddNumbers2 = memModule.GetDelegateFromFuncName<AddNumbersDelegate>("AddNumbers");
+                        Console.WriteLine("The Answer: {0:G}", AddNumbers(38, 4));
+
+
+                        // Working with stucts
                         QuxDelegate qux = (QuxDelegate)memModule.GetDelegateFromFuncName("Qux", typeof(QuxDelegate));
-
                         Foo foo = new Foo
                         {
                             bar = new int[] { 23, 5, 42 }
@@ -50,12 +66,11 @@ namespace Scavanger.MemoryModule
 
                         IntPtr fooPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Foo)));
                         Marshal.StructureToPtr(foo, fooPtr, true);
-
-                        if (qux != null)
-                            Console.WriteLine("Still the answer: {0:D}", qux(fooPtr));
+                        Console.WriteLine("Still the answer: {0:D}", qux(fooPtr));
 
                         Marshal.FreeHGlobal(fooPtr);
                     }
+
                 }
                 catch (Exception ex)
                 {
@@ -67,10 +82,6 @@ namespace Scavanger.MemoryModule
 
             Console.ReadKey(true);
         }
-
-        static void LoadAndExecuteFromMemory(byte[] dll)
-        {
-
-        }
     }
 }
+    

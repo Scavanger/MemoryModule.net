@@ -1,9 +1,9 @@
 ﻿/*                                                               
- * Memory Module.net 0.1
+ * Memory Module.net 0.2
  * 
  * Loading a native Dll from memory, a C#/.net port of Memory Module
  * 
- * (c) 2012 by Andreas Kanzler (andi_kanzler(at)gmx.de)
+ * (c) 2012-2018 by Andreas Kanzler (andi_kanzler(at)gmx.de)
  * 
  * Memory Module is original developed by Joachim Bauch (mail(at)joachim-bauch.de)  
  * https://github.com/fancycode/MemoryModule
@@ -30,25 +30,31 @@
  */
 
 using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 
 namespace Scavanger.MemoryModule
 {
     public class NativeDllLoadException : Exception
     {
+        public Win32Exception Win32Exception { get; private set; } 
+
         public NativeDllLoadException()
             : base()
         {
+            Win32Exception = new Win32Exception();
         }
 
         public NativeDllLoadException(string message)
             : base(message)
         {
+            Win32Exception = new Win32Exception();
         }
 
         public NativeDllLoadException(string message, Exception innerException)
             : base(message, innerException)
         {
+            Win32Exception = new Win32Exception();
         }
-
     }
 }

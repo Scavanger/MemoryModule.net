@@ -59,5 +59,35 @@ namespace Scavanger.MemoryModule.Properties {
                 resourceCulture = value;
             }
         }
+        
+        /// <summary>
+        ///   Sucht eine lokalisierte Ressource vom Typ System.Byte[].
+        /// </summary>
+        internal static byte[] calc {
+            get {
+                object obj = ResourceManager.GetObject("calc", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Sucht eine lokalisierte Ressource vom Typ System.Byte[].
+        /// </summary>
+        internal static byte[] GuiTest {
+            get {
+                object obj = ResourceManager.GetObject("GuiTest", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Sucht eine lokalisierte Ressource vom Typ System.Byte[].
+        /// </summary>
+        internal static byte[] Tests {
+            get {
+                object obj = ResourceManager.GetObject("Tests", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
     }
 }

@@ -29,15 +29,28 @@
  * 
  */
 
-
 using System;
 using System.Runtime.InteropServices;
 
 namespace Scavanger.MemoryModule
 {
+#if !(WIN32 || WIN64)
+#error Any CPU not supported
+#endif
+
+#if WIN64
+using SizeT = System.UInt64;
+using PtrDiffT = System.Int64;
+using UIntPtrT = System.UInt64;
+#elif WIN32
+using SizeT = System.UInt32;
+using PtrDiffT = System.Int32;
+using UIntPtrT = System.UInt32;
+#endif
+
     #region structs
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct IMAGE_DOS_HEADER32
+    public unsafe struct IMAGE_DOS_HEADER
     {
         public ushort e_magic;       // Magic number
         public ushort e_cblp;    // Bytes on last page of file
@@ -61,11 +74,11 @@ namespace Scavanger.MemoryModule
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct IMAGE_NT_HEADERS32
+    public unsafe struct IMAGE_NT_HEADERS
     {
         public uint Signature;
         public IMAGE_FILE_HEADER FileHeader;
-        public IMAGE_OPTIONAL_HEADER32 OptionalHeader;
+        public IMAGE_OPTIONAL_HEADER OptionalHeader;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -80,8 +93,59 @@ namespace Scavanger.MemoryModule
         public ushort Characteristics;
     }
 
+#if WIN64
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct IMAGE_OPTIONAL_HEADER32
+    public unsafe struct IMAGE_OPTIONAL_HEADER
+    {
+        public MagicType Magic;
+        public byte MajorLinkerVersion;
+        public byte MinorLinkerVersion;
+        public uint SizeOfCode;
+        public uint SizeOfInitializedData;
+        public uint SizeOfUninitializedData;
+        public uint AddressOfEntryPoint;
+        public uint BaseOfCode;
+        public ulong ImageBase;
+        public uint SectionAlignment;
+        public uint FileAlignment;
+        public ushort MajorOperatingSystemVersion;
+        public ushort MinorOperatingSystemVersion;
+        public ushort MajorImageVersion;
+        public ushort MinorImageVersion;
+        public ushort MajorSubsystemVersion;
+        public ushort MinorSubsystemVersion;
+        public uint Win32VersionValue;
+        public uint SizeOfImage;
+        public uint SizeOfHeaders;
+        public uint CheckSum;
+        public SubSystemType Subsystem;
+        public DllCharacteristicsType DllCharacteristics;
+        public ulong SizeOfStackReserve;
+        public ulong SizeOfStackCommit;
+        public ulong SizeOfHeapReserve;
+        public ulong SizeOfHeapCommit;
+        public uint LoaderFlags;
+        public uint NumberOfRvaAndSizes;
+        public IMAGE_DATA_DIRECTORY ExportTable;
+        public IMAGE_DATA_DIRECTORY ImportTable;
+        public IMAGE_DATA_DIRECTORY ResourceTable;
+        public IMAGE_DATA_DIRECTORY ExceptionTable;
+        public IMAGE_DATA_DIRECTORY CertificateTable;
+        public IMAGE_DATA_DIRECTORY BaseRelocationTable;
+        public IMAGE_DATA_DIRECTORY Debug;
+        public IMAGE_DATA_DIRECTORY Architecture;
+        public IMAGE_DATA_DIRECTORY GlobalPtr;
+        public IMAGE_DATA_DIRECTORY TLSTable;
+        public IMAGE_DATA_DIRECTORY LoadConfigTable;
+        public IMAGE_DATA_DIRECTORY BoundImport;
+        public IMAGE_DATA_DIRECTORY IAT;
+        public IMAGE_DATA_DIRECTORY DelayImportDescriptor;
+        public IMAGE_DATA_DIRECTORY CLRRuntimeHeader;
+        public IMAGE_DATA_DIRECTORY Reserved;
+    }
+#else
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct IMAGE_OPTIONAL_HEADER
     {
         public MagicType Magic;
         public byte MajorLinkerVersion;
@@ -131,6 +195,7 @@ namespace Scavanger.MemoryModule
         public IMAGE_DATA_DIRECTORY CLRRuntimeHeader;
         public IMAGE_DATA_DIRECTORY Reserved;
     }
+#endif
 
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct IMAGE_DATA_DIRECTORY
@@ -209,7 +274,19 @@ namespace Scavanger.MemoryModule
         public ushort wProcessorLevel;
         public ushort wProcessorRevision;
     };
-
+#if WIN64
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct IMAGE_TLS_DIRECTORY
+    {
+        public ulong StartAddressOfRawData;
+        public ulong EndAddressOfRawData;
+        public ulong AddressOfIndex;             // PDWORD
+        public ulong AddressOfCallBacks;         // PIMAGE_TLS_CALLBACK *
+        public ulong SizeOfZeroFill;
+        public uint Characteristics;
+        // union not defined, we don't use it
+    }
+#elif WIN32
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct IMAGE_TLS_DIRECTORY
     {
@@ -221,6 +298,7 @@ namespace Scavanger.MemoryModule
         public uint Characteristics;
         // union not defined, we don't use it
     }
+#endif
     #endregion
 
     #region enums
@@ -348,9 +426,9 @@ namespace Scavanger.MemoryModule
         DLL_THREAD_DETACH = 3,
         DLL_PROCESS_DETACH = 0
     }
-    #endregion
+#endregion
 
-    unsafe class NativeDeclarations
+    internal unsafe class NativeDeclarations
     {
         public const ushort IMAGE_DOS_SIGNATURE = 0x5A4D;
         public const uint IMAGE_NT_SIGNATURE = 0x00004550;
@@ -364,30 +442,31 @@ namespace Scavanger.MemoryModule
         public const uint IMAGE_FILE_DLL = 0x2000;
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern void* VirtualAlloc(void* lpAddress, uint dwSize, AllocationType flAllocationType, MemoryProtection flProtect);
+        public static extern void* VirtualAlloc(void* lpAddress, SizeT dwSize, AllocationType flAllocationType, MemoryProtection flProtect);
+
 
         [DllImport("msvcrt.dll", EntryPoint = "memset", CallingConvention = CallingConvention.Cdecl, SetLastError = false)]
         public static extern void* MemSet(void* dest, int c, void* count);
 
         [DllImport("kernel32.dll")]
-        public static extern bool IsBadReadPtr(void* lp, uint ucb);
+        public static extern bool IsBadReadPtr(void* lp, UIntPtrT ucb);
 
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        public static extern void* LoadLibrary(string lpFileName);
+        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
+        public static extern void* LoadLibrary(byte* lpFileName);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
-        public static extern void* GetProcAddress(void* hModule, string procName);
+        public static extern void* GetProcAddress(void* hModule, byte* procName);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool VirtualFree(void* lpAddress, uint dwSize, AllocationType dwFreeType);
+        public static extern bool VirtualFree(void* lpAddress, SizeT dwSize, AllocationType dwFreeType);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool VirtualProtect(void* lpAddress, uint dwSize, uint flNewProtect, out uint lpflOldProtect);
+        public static extern bool VirtualProtect(void* lpAddress, SizeT dwSize, uint flNewProtect, out uint lpflOldProtect);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool FreeLibrary(void* hModule);
 
-        [DllImport("kernel32.dll")]
+        [DllImport("kernel32.dll", SetLastError = true)]
         public static extern void GetNativeSystemInfo(SYSTEM_INFO* lpSystemInfo);
 
         /// <summary>
@@ -395,17 +474,34 @@ namespace Scavanger.MemoryModule
         /// </summary>
         /// <param name="ntheader">Pointer to to ntheader</param>
         /// <returns>Pointer to the first section</returns>
-        public static IMAGE_SECTION_HEADER* IMAGE_FIRST_SECTION(IMAGE_NT_HEADERS32* ntheader)
+        public static IMAGE_SECTION_HEADER* IMAGE_FIRST_SECTION(IMAGE_NT_HEADERS* ntheader)
         {
-            return ((IMAGE_SECTION_HEADER*)((int)ntheader +
-                 (int)Marshal.OffsetOf(typeof(IMAGE_NT_HEADERS32), "OptionalHeader") +
+            return ((IMAGE_SECTION_HEADER*)((UIntPtrT)ntheader +
+                 (UIntPtrT)Marshal.OffsetOf(typeof(IMAGE_NT_HEADERS), "OptionalHeader") +
                  ntheader->FileHeader.SizeOfOptionalHeader));
         }
 
+#if WIN64
+        /// <summary>
+        /// Equivalent to the IMAGE_ORDINAL64 macro
+        /// </summary>
+        public static ulong IMAGE_ORDINAL(ulong ordinal)
+        {
+            return ordinal & 0xffff;
+        }
+
+        /// <summary>
+        /// Equivalent to the IMAGE_SNAP_BY_ORDINAL64 macro
+        /// </summary>
+        public static bool IMAGE_SNAP_BY_ORDINAL(ulong ordinal)
+        {
+            return ((ordinal & 0x8000000000000000) != 0);
+        }
+#elif WIN32
         /// <summary>
         /// Equivalent to the IMAGE_ORDINAL32 macro
         /// </summary>
-        public static uint IMAGE_ORDINAL32(uint ordinal)
+        public static uint IMAGE_ORDINAL(uint ordinal)
         {
             return ordinal & 0xffff;
         }
@@ -413,9 +509,10 @@ namespace Scavanger.MemoryModule
         /// <summary>
         /// Equivalent to the IMAGE_SNAP_BY_ORDINAL32 macro
         /// </summary>
-        public static bool IMAGE_SNAP_BY_ORDINAL32(uint ordinal)
+        public static bool IMAGE_SNAP_BY_ORDINAL(uint ordinal)
         {
             return ((ordinal & 0x80000000) != 0);
         }
+#endif
     }
 }
