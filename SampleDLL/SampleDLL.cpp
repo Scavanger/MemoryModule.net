@@ -21,6 +21,7 @@ VOID WINAPI tls_callback2(
 		v2 = 2;
 }
 
+
 // ------------------------------------------------------------------------ -
 // TLS 32/64 bits example by Elias Bachaalany <lallousz-x86@yahoo.com>
 #ifdef _M_AMD64

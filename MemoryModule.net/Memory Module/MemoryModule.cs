@@ -34,7 +34,6 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.ComponentModel;
 using System.Linq;
 
 using Win = Scavanger.MemoryModule.NativeDeclarations;
@@ -57,6 +56,9 @@ namespace Scavanger.MemoryModule
     {
         public bool Disposed { get; private set; }
         public bool IsDll { get; private set; }
+#if WIN64
+        public List<IntPtr> _blockedMemory { get; private set; }
+#endif
 
         private GCHandle _dataHandle;
         private IMAGE_NT_HEADERS* _headers;
@@ -67,7 +69,7 @@ namespace Scavanger.MemoryModule
         private DllEntryDelegate _dllEntry;
         private ExeEntryDelegate _exeEntry;
         private bool _isRelocated;
-        private List<IntPtr> _blockedMemory;
+       
 
         [UnmanagedFunctionPointer(CallingConvention.Winapi)]
         private delegate bool DllEntryDelegate(void* hinstDLL, DllReason fdwReason, void* lpReserved);
@@ -108,27 +110,7 @@ namespace Scavanger.MemoryModule
             Dispose();
         }
 
-        /// <summary>
-        /// Returns a delegate for a function inside the DLL.
-        /// </summary>
-        /// <typeparam name="TDelegate">The type of the delegate.</typeparam>
-        /// <param name="funcName">The name of the function to be searched.</param>
-        /// <returns>A delegate instance of type TDelegate</returns>
-        public TDelegate GetDelegateFromFuncName<TDelegate>(string funcName) where TDelegate : class
-        {
-            /* Örks!
-                What i want is:
-                public TDelegate GetDelegateFromFuncName<TDelegate>(string funcName) where TDelegate : Delegate
-                {
-                    return (TDelegate)GetDelegateFromFuncName(funcName, typeof(TDelegate));
-                }
-            */
-
-            if (!typeof(Delegate).IsAssignableFrom(typeof(TDelegate)))
-                throw new InvalidOperationException(typeof(TDelegate).Name + " is not a delegate");
-
-            return (TDelegate)(object)GetDelegateFromFuncName(funcName, typeof(TDelegate));
-        }
+        
 
         /// <summary>
         /// Returns a delegate for a function inside the DLL.
@@ -137,6 +119,19 @@ namespace Scavanger.MemoryModule
         /// <param name="t">The type of the delegate to be returned.</param>
         /// <returns>A delegate instance that can be cast to the appropriate delegate type.</returns>
         public Delegate GetDelegateFromFuncName(string funcName, Type t)
+        {
+            if (t == null)
+                throw new ArgumentNullException("t");
+
+            Delegate @delegate = Marshal.GetDelegateForFunctionPointer((IntPtr)GetPtrFromFuncName(funcName), t);
+
+            if (@delegate == null)
+                throw new NativeDllLoadException("Unable to get managed delegate.");
+
+            return @delegate;
+        }
+
+        private void* GetPtrFromFuncName(string funcName)
         {
             if (Disposed)
                 throw new InvalidOperationException("Object disposed");
@@ -147,8 +142,6 @@ namespace Scavanger.MemoryModule
             if (string.IsNullOrEmpty(funcName))
                 throw new ArgumentException("funcName");
 
-            if (t == null)
-                throw new ArgumentNullException("t");
 
             if (Disposed)
                 throw new ObjectDisposedException("MemoryModule");
@@ -156,17 +149,10 @@ namespace Scavanger.MemoryModule
             if (!_initialized)
                 throw new InvalidOperationException("Dll is not initialized.");
 
-            funcName = funcName.ToLower(); //Ignore case
-            Delegate @delegate;
-
-            //Todo:
-            // Add support for stdcall: _funcname@
-
             int idx = -1;
             uint* nameRef;
             ushort* ordinal;
             IMAGE_EXPORT_DIRECTORY* exports;
-            void* funcPtr;
             Dictionary<string, int> exportEntrys = new Dictionary<string, int>();
 
             IMAGE_DATA_DIRECTORY* directory = &_headers->OptionalHeader.ExportTable;
@@ -182,7 +168,7 @@ namespace Scavanger.MemoryModule
             for (int i = 0; i < exports->NumberOfNames; i++, nameRef++, ordinal++)
             {
                 string curFuncName = Marshal.PtrToStringAnsi((IntPtr)(_codeBase + *nameRef));
-                exportEntrys.Add(curFuncName.ToLower(), *ordinal);
+                exportEntrys.Add(curFuncName, *ordinal);
             }
 
             if (!exportEntrys.Keys.Contains(funcName))
@@ -193,13 +179,7 @@ namespace Scavanger.MemoryModule
             if (idx > exports->NumberOfFunctions)
                 throw new NativeDllLoadException("IDX don't match number of funtions.");
 
-            funcPtr = _codeBase + (*(uint*)(_codeBase + exports->AddressOfFunctions + (idx * 4)));
-            @delegate = Marshal.GetDelegateForFunctionPointer((IntPtr)funcPtr, t);
-
-            if (@delegate == null)
-                throw new NativeDllLoadException("Unable to get managed delegate.");
-
-            return @delegate;
+            return _codeBase + (*(uint*)(_codeBase + exports->AddressOfFunctions + (idx * 4)));
         }
 
         /// <summary>
@@ -643,7 +623,7 @@ namespace Scavanger.MemoryModule
             }
         }
 
-        #region Helper
+#region Helper
 
         private bool InvalidHandle(void* h) => h == (void*)-1 || h == (void*)0;
 
@@ -651,9 +631,9 @@ namespace Scavanger.MemoryModule
 
         private SizeT AlignValueUp(SizeT value, SizeT alignment) => (value + alignment - 1) & ~(alignment - 1);
 
-        private static UIntPtrT AlignValueDown(UIntPtrT value, UIntPtrT alignment) => value & ~(alignment - 1);
+        private  UIntPtrT AlignValueDown(UIntPtrT value, UIntPtrT alignment) => value & ~(alignment - 1);
 
-        private static void* AlignAddressDown(void* address, UIntPtrT alignment) => (void*)AlignValueDown((UIntPtrT)address, alignment);
+        private void* AlignAddressDown(void* address, UIntPtrT alignment) => (void*)AlignValueDown((UIntPtrT)address, alignment);
 
         private SizeT GetRealSectionSize(IMAGE_SECTION_HEADER* section)
         {
@@ -674,9 +654,9 @@ namespace Scavanger.MemoryModule
 
 
 
-        #endregion
+#endregion
 
-        #region IDisposable
+#region IDisposable
         public void Close() => ((IDisposable)this).Dispose();
 
         void IDisposable.Dispose()
@@ -711,7 +691,7 @@ namespace Scavanger.MemoryModule
             Disposed = true;
 
         }
-        #endregion
+#endregion
 
         private class SectionFinalizeData
         {

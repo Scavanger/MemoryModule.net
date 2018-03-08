@@ -1,11 +1,10 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 using System.IO;
-using System.Threading;
 
 namespace Scavanger.MemoryModule
 {
-    unsafe class Program
+    class Program
     {
         [StructLayout(LayoutKind.Sequential)]
         struct Foo
@@ -36,8 +35,7 @@ namespace Scavanger.MemoryModule
 #endif
 #else
 #if WIN64
-            //string dllPath = @"..\..\..\..\X64\Release\SampleDll.dll";
-            string dllPath = "SampleDll.dll";
+            string dllPath = @"..\..\..\..\X64\Release\SampleDll.dll";
 #elif WIN32
             string dllPath = @"..\..\..\Release\SampleDll.dll";
 #endif
@@ -52,11 +50,7 @@ namespace Scavanger.MemoryModule
                         AddNumbersDelegate AddNumbers = (AddNumbersDelegate)memModule.GetDelegateFromFuncName("AddNumbers", typeof(AddNumbersDelegate));
                         Console.WriteLine("The Answer: {0:G}", AddNumbers(40, 2));
 
-                        // Normal fucnction call, with generics
-                        AddNumbersDelegate AddNumbers2 = memModule.GetDelegateFromFuncName<AddNumbersDelegate>("AddNumbers");
-                        Console.WriteLine("The Answer: {0:G}", AddNumbers(38, 4));
-
-
+                        
                         // Working with stucts
                         QuxDelegate qux = (QuxDelegate)memModule.GetDelegateFromFuncName("Qux", typeof(QuxDelegate));
                         Foo foo = new Foo
