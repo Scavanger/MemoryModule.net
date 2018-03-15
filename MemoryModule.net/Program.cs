@@ -46,13 +46,16 @@ namespace Scavanger.MemoryModule
                 {
                     using (MemoryModule memModule = new MemoryModule(File.ReadAllBytes(dllPath)))
                     {
-                        // Normal fucnction call
+                        // Normal function call
                         AddNumbersDelegate AddNumbers = (AddNumbersDelegate)memModule.GetDelegateFromFuncName("AddNumbers", typeof(AddNumbersDelegate));
                         Console.WriteLine("The Answer: {0:G}", AddNumbers(40, 2));
 
+                        // Normal function call, with generics
+                        AddNumbersDelegate AddNumbers2 = memModule.GetDelegateFromFuncName<AddNumbersDelegate>("AddNumbers");
+                        Console.WriteLine("The Answer: {0:G}", AddNumbers2(38, 4));
                         
-                        // Working with stucts
-                        QuxDelegate qux = (QuxDelegate)memModule.GetDelegateFromFuncName("Qux", typeof(QuxDelegate));
+                        // Working with structs
+                        QuxDelegate qux = memModule.GetDelegateFromFuncName<QuxDelegate>("Qux");
                         Foo foo = new Foo
                         {
                             bar = new int[] { 23, 5, 42 }

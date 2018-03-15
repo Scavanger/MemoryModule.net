@@ -110,7 +110,23 @@ namespace Scavanger.MemoryModule
             Dispose();
         }
 
-        
+        /// <summary>
+        /// Returns a delegate for a function inside the DLL.
+        /// </summary>
+        /// <typeparam name="TDelegate">The type of the delegate.</typeparam>
+        /// <param name="funcName">The name of the function to be searched.</param>
+        /// <returns>A delegate instance of type TDelegate</returns>
+        public TDelegate GetDelegateFromFuncName<TDelegate>(string funcName) where TDelegate : class
+        {
+            if (!typeof(Delegate).IsAssignableFrom(typeof(TDelegate)))
+                throw new ArgumentException(typeof(TDelegate).Name + " is not a delegate");
+
+            TDelegate @delegate = Marshal.GetDelegateForFunctionPointer<TDelegate>((IntPtr)GetPtrFromFuncName(funcName));
+            if (@delegate == null)
+                throw new NativeDllLoadException("Unable to get managed delegate.");
+
+            return @delegate;
+        }
 
         /// <summary>
         /// Returns a delegate for a function inside the DLL.
@@ -334,9 +350,14 @@ namespace Scavanger.MemoryModule
             else
             {
                 exeEntryPtr = code + _headers->OptionalHeader.AddressOfEntryPoint;
-                _exeEntry = (ExeEntryDelegate)Marshal.GetDelegateForFunctionPointer((IntPtr)exeEntryPtr, typeof(ExeEntryDelegate));
+                _exeEntry = Marshal.GetDelegateForFunctionPointer<ExeEntryDelegate>((IntPtr)exeEntryPtr);
 
             }
+        }
+
+        private void MemoryFindResource(uint language)
+        {
+
         }
 
         private void ExecuteTLS()
@@ -355,7 +376,7 @@ namespace Scavanger.MemoryModule
             {
                 for (; *callbackPtr > 0; callbackPtr++)
                 {
-                    tls = (ImageTlsDelegate)Marshal.GetDelegateForFunctionPointer((IntPtr)(*callbackPtr), typeof(ImageTlsDelegate));
+                    tls = Marshal.GetDelegateForFunctionPointer<ImageTlsDelegate>((IntPtr)(*callbackPtr));
                     tls(_codeBase, DllReason.DLL_PROCESS_ATTACH, null);
                 }
             }
